@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
+
+from __future__ import annotations
+
 import itertools
 import functools
+import dataclasses
 from multiprocessing import Pool
+# import matplotlib
+# from matplotlib import pyplot
 
 directions = []
 directions.append([-1,0])
@@ -13,9 +19,6 @@ directions.append([-1,+1])
 directions.append([0,+1])
 directions.append([+1,+1])
 
-# txt = open('test.txt').read()
-txt = open('input.txt').read()
-lines = txt.splitlines()
 # squares = [(x,y) for (x,y) in line.strip().split() for line in lines]
 
 def distance(a, b):
@@ -33,140 +36,280 @@ def get_area(a,b):
 # c = 3 2 = (b[0] a[1])
 # d = 1 4 = (a[0] b[1])
 
-@functools.cache
-def make_walls(a,b):
-    c = (a[0], b[1])
-    d = (b[0], a[1])
-    walls = set()
-    walls.update(make_line(a,c))
-    walls.update(make_line(c,b))
-    walls.update(make_line(b,d))
-    walls.update(make_line(d,a))
-    return walls
 
-def make_line(a, b):
-    if a[0] == b[0]:
-        if a[1] < b[1]:
-            y1, y2 = a[1], b[1]
+@dataclasses.dataclass(frozen=True)
+class Point:
+    x: int
+    y: int
+
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y
+
+    def __getitem__(self, key):
+        if key == 0:
+            return self.x
+        elif key == 1:
+            return self.y
         else:
-            y1, y2 = b[1], a[1]
-        return [(a[0], y) for y in range(y1,y2)]
-    elif a[1] == b[1]:
-        if a[0] < b[0]:
-            y1, y2 = a[0], b[0]
+            raise(IndexError(key))
+
+    @functools.cached_property
+    def list(self):
+        return [self.x, self.y]
+
+    def is_on(self, other: Segment):
+        return other.contains(self) or self in (other.a, other.b)
+
+@dataclasses.dataclass
+class Segment:
+    a: Point
+    b: Point
+
+    def __post_init__(self):
+        try:
+            assert any(self.direction) and not all(self.direction)
+        except:
+            breakpoint()
+            pass
+
+    @functools.cached_property
+    def list(self):
+        return [self.a.list, self.b.list]
+
+    @functools.cached_property
+    def direction(self):
+        direction = [self.b[0]-self.a[0], self.b[1]-self.a[1]]
+        for n in range(len(direction)):
+            if direction[n]:
+                direction[n] = direction[n] // abs(direction[n])
+        return tuple(direction)
+
+    @functools.cached_property
+    def norm(self):
+        return (-self.direction[1], self.direction[0])
+
+    def contains(self, other: Point):
+        if self.direction[0]:
+            var_idx = 0
+            const_idx = 1
         else:
-            y1, y2 = b[0], a[0]
-        return [(y, a[1]) for y in range(y1,y2)]
-    else:
-        raise ValueError(f"{a = }, {b = }")
+            var_idx = 1
+            const_idx = 0
+        return (
+                (
+                    self.a[var_idx] < other[var_idx] < self.b[var_idx] or
+                    self.a[var_idx] > other[var_idx] > self.b[var_idx]
+                ) and (
+                    self.a[const_idx] == other[const_idx]
+                ))
 
-def toward(a,b):
-    dx = (b[0] - a[0])
-    dy = (b[1] - a[1])
-    if dx == 0:
-        x = 0
-    else:
-        x = dx // abs(dx)
-    if dy == 0:
-        y = 0
-    else:
-        y = dy // abs(dy)
-    return (x,y)
+    def intersects(self, other: Point):
+        # . . . . . . . . . . .
+        # . . . . . . . . . . .
+        # . . . | . . . . . . .
+        # . - - - - - . . . . .
+        # . . . | . . . . . . .
+        # . . . | . . . . . . .
+        # . . . . . . . . . . .
+        # . . . . . . . . . . .
+        # a = 1,4
+        # b = 5,4
+        # a = 3,2
+        # b = 3,5
 
-def is_inside(a):
-    if a in borders:
+        if self.direction == other.direction:
+            return False
+        if self.direction[0]:
+            possible_cross = Point(other.a[0], self.a[1])
+        else:
+            possible_cross = Point(self.a[0], other.a[1])
+        return (self.contains(possible_cross) and other.contains(possible_cross))
+
+    @property
+    def line_collection(self):
+        return matplotlib.collections.LineCollection([[self.a.list, self.b.list]])
+
+test1_line = Segment(a=Point(x=97554, y=50097), b=Point(x=97735, y=50097))
+test1_point = Point(x=59707, y=50097)
+assert not test1_line.contains(test1_point)
+tseg_rect = Segment(a=Point(x=59707, y=2784), b=Point(x=59707, y=97183))
+tseg_poly = Segment(a=Point(x=97554, y=50097), b=Point(x=97735, y=50097))
+assert not tseg_rect.intersects(tseg_poly)
+assert not tseg_poly.intersects(tseg_rect)
+p1 = Point(0,1)
+p2 = Point(10,1)
+p1p2 = Segment(p1,p2)
+p3 = Point(5,1)
+p4 = Point(2,9)
+p5 = Point(9,2)
+assert p1.is_on(p1p2)
+assert p2.is_on(p1p2)
+assert not p1p2.contains(p1)
+assert not p1p2.contains(p2)
+assert p1p2.contains(p3)
+assert not p1p2.contains(p4)
+assert not p1p2.contains(p5)
+
+
+@dataclasses.dataclass
+class Polygon:
+    segments: list(Segment)
+
+    @functools.cached_property
+    def points(self):
+        points = set()
+        for segment in self.segments:
+            for point in segment.list:
+                points.update([Point(point[0], point[1])])
+        return points
+
+    @functools.cached_property
+    def point_combinations(self):
+        return tuple(itertools.combinations(self.points, 2))
+
+    def __iter__(self):
+        return iter(self.segments)
+
+    def covers(self, other: Rectangle):
+        for point in self.points:
+            if other.contains(point):
+                return False
+        for rect_segment in other.segments:
+            for poly_segment in self.segments:
+                if rect_segment.intersects(poly_segment):
+                    # ax = pyplot.gca()
+                    # c0 = other.line_collection
+                    # c0.set_color('black')
+                    # c0.set_linewidth(0.5)
+                    # ax.add_collection(c0)
+                    # c1 = poly_segment.line_collection
+                    # c1.set_color('green')
+                    # c1.set_linewidth(5)
+                    # ax.add_collection(c1)
+                    # c2 = rect_segment.line_collection
+                    # c2.set_color('red')
+                    # c2.set_linewidth(1)
+                    # ax.add_collection(c2)
+                    # ax.plot([other.p1.list, other.p2.list], color='magenta', marker='o')
+                    # breakpoint()
+                    return False
         return True
-    (x,y) = a
-    crosses = 0
-    while x > x_floor and y > y_floor:
-        if (x,y) in borders:
-            crosses += 1
-        x -= 1
-        y -= 1
-    return bool(crosses % 2)
 
-def in_rect(a, rect):
-    recta, rectb = rect
-    if recta[0] < a[0] < rectb[0] or rectb[0] < a[0] < recta[0]:
-        if recta[1] < a[1] < rectb[1] or rectb[1] < a[1] < recta[1]:
-            return True
-    return False
 
-def any_in_rect(rect):
-    for red in reds:
-        if in_rect(red, rect):
-            return True
-    return False
 
-def segment_crosses_rect(segment, rect):
-    sega, segb = segment
-    recta, rectb = rect
-    if sega[0] == segb[0]:
-        if recta[0] < sega[0] < rectb[0] or rectb[0] < sega[0] < recta[0]:
-            if (sega[1] < recta[1] < segb[1] or segb[1] < recta[1] < sega[1]
-                or sega[1] < rectb[1] < segb[1] or segb[1] < rectb[1] < sega[1]):
-                return True
-    elif sega[1] == segb[1]:
-        if recta[1] < sega[1] < rectb[1] or rectb[1] < sega[1] < recta[1]:
-            if (sega[0] < recta[0] < segb[0] or segb[0] < recta[0] < sega[0]
-                or sega[0] < rectb[0] < segb[0] or segb[0] < rectb[0] < sega[0]):
-                return True
-    else:
-        raise ValueError(f"{segment = }, {rect = }")
-    return False
+@dataclasses.dataclass
+class Rectangle:
+    p1: Point
+    p2: Point
 
-def any_segment_crosses_rect(rect):
-    for segment in segments:
-        if segment_crosses_rect(segment, rect):
-            return True
-    return False
+    @functools.cached_property
+    def area(self):
+        return get_area(self.p1, self.p2)
 
-def check_corners(rect):
-    a,b = rect
-    c = (a[0], b[1])
-    d = (b[0], a[1])
-    return is_inside(a) and is_inside(b)
+    def __lt__(self, other):
+        return self.area < other.area
 
-reds = []
-x_vals = []
-y_vals = []
-for line in lines:
-    x,y = map(int,line.strip().split(','))
-    x_vals.append(x)
-    y_vals.append(y)
-    square = (int(x),int(y))
-    reds.append(square)
-x_floor = min(x_vals) - 1
-y_floor = min(y_vals) - 1
+    def __gt__(self, other):
+        return self.area > other.area
 
-borders = set()
-segments = []
-for i in range(len(reds)):
-    j = i-1
-    segments.append((reds[i], reds[j]))
-    new_line = make_line(reds[i], reds[j])
-    assert new_line
-    borders.update(new_line)
+    def __eq__(self, other):
+        return self.area == other.area
 
-areas = []
-areas2 = []
-for a, b in itertools.combinations(reds, 2):
-    areas.append((get_area(a,b), a, b))
-areas.sort(reverse=True)
-print(areas[0])
-for area in areas:
-    (_, a, b) = area
-    if not any_segment_crosses_rect((a,b)):
-        if not any_in_rect((a,b)):
-            if check_corners((a,b)):
-                print(area)
-                breakpoint()
-breakpoint()
-# 1428829072
-# 1301836184
-areas.sort()
-areas2.sort()
+    def contains(self, other: Point):
+        return (
+                    self.p1[0] < other[0] < self.p2[0]
+                    or self.p1[0] > other[0] > self.p2[0]
+                ) and (
+                    self.p1[1] < other[1] < self.p2[1]
+                    or self.p1[1] > other[1] > self.p2[1]
+                )
 
-print(areas[-1])
-print(areas2[-1])
-breakpoint()
+    @functools.cached_property
+    def pa(self):
+        return Point(self.p1[0], self.p2[1])
+
+    @functools.cached_property
+    def pb(self):
+        return Point(self.p2[0], self.p1[1])
+
+    @property
+    def segments(self):
+        return [
+                Segment(self.p1, self.pa),
+                Segment(self.pa, self.p2),
+                Segment(self.p2, self.pb),
+                Segment(self.pb, self.p1),
+                ]
+    @property
+    def line_collection(self):
+        l = [s.list for s in self.segments]
+        return matplotlib.collections.LineCollection(l, linewidths=2)
+
+
+if __name__ == '__main__':
+    # txt = open('test.txt').read()
+    txt = open('input.txt').read()
+    lines = txt.splitlines()
+    polygon_points = []
+    x_vals = []
+    y_vals = []
+    for line in lines:
+        x,y = map(int,line.strip().split(','))
+        x_vals.append(x)
+        y_vals.append(y)
+        polygon_points.append(Point(x,y))
+    x_floor = min(x_vals) - 1
+    y_floor = min(y_vals) - 1
+
+    polygon_segments = []
+    for i in range(len(polygon_points)):
+        j = i-1
+        polygon_segments.append(Segment(polygon_points[i], polygon_points[j]))
+    polygon = Polygon(polygon_segments)
+
+    linelist = [s.list for s in polygon]
+    # plotlines = matplotlib.collections.LineCollection(linelist, linewidths=2)
+    # print(plotlines)
+    # fig = matplotlib.pyplot.figure(1)
+    # fig.gca().add_collection(plotlines)
+    # fig.show()
+    # fig.gca().set_xlim(1000,99999)
+    # fig.gca().set_ylim(1000,99999)
+    rectangles = []
+    for p1, p2 in polygon.point_combinations:
+        if p1[0] == p2[0]:
+            continue
+        if p1[1] == p2[1]:
+            continue
+        rectangles.append(Rectangle(p1, p2))
+    rectangles.sort(reverse=True)
+    test_rect1 = Rectangle(p1=Point(x=94969, y=48695), p2=Point(x=3910, y=37965))
+    test_rect2 = Rectangle(p1=Point(x=32340, y=5390), p2=Point(x=98064, y=46468))
+    test_point2 = Point(76614, 10885)
+    # fig.gca().add_collection(test_rect2.line_collection)
+    assert test_rect2.contains(test_point2)
+    assert not polygon.covers(test_rect2)
+    assert polygon.covers(test_rect1)
+    print(len(rectangles))
+    for rectangle in rectangles:
+        if [94969, 48695] in (rectangle.p1.list, rectangle.p2.list):
+            if [3910, 37965] in (rectangle.p1.list, rectangle.p2.list):
+                fig.gca().add_collection(rectangle.line_collection)
+                # breakpoint()
+        if polygon.covers(rectangle):
+            print(rectangle)
+            print(rectangle.area)
+            exit()
+            fig.gca().add_collection(rectangle.line_collection)
+
+
+    breakpoint()
+    # 1428829072
+    # 1301836184
+    # 1396494456
+    areas.sort()
+    areas2.sort()
+
+    print(areas[-1])
+    print(areas2[-1])
+    breakpoint()
