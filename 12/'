@@ -1,0 +1,21 @@
+import itertools
+import collections
+import functools
+import dataclasses
+
+
+
+@dataclasses.dataclass(frozen=True)
+class Area:
+    txt: str
+
+def init(filename):
+    txt = open(filename).read()
+    txt_all_presents, _, txt_all_areas = txt.rpartition('\n\n')
+    txt_presents = txt_all_presents.split('\n\n')
+    txt_areas = txt_all_areas.strip().split('\n')
+    print(txt_areas)
+
+if __name__ == '__main__':
+    presents, areas = init('test.txt')
+    # for txt_present in txt_presents
